@@ -1,6 +1,11 @@
 var PRICE = 9.99;
 var LOAD_NUM = 10;
 
+var pusher = new Pusher('afa10963e33b5159007a', {
+  cluster: 'us2',
+  encrypted: true
+});
+
 new Vue({
   el: "#app",
   data: {
@@ -11,12 +16,16 @@ new Vue({
     newSearch: "anime",
     lastSearch: "",
     loading: false,
-    price: PRICE
+    price: PRICE,
+    pusherUpdate: false
   },
   methods: {
     appendItems: function () {
       if (this.items.length < this.results.length) {
-        var append = this.results.slice(this.items.length, this.items.length + LOAD_NUM);
+        var append = this.results.slice(
+          this.items.length,
+          this.items.length + LOAD_NUM
+        );
         this.items = this.items.concat(append);
       }
     },
@@ -24,14 +33,12 @@ new Vue({
       if (this.newSearch.length) {
         this.items = [];
         this.loading = true;
-        this.$http
-          .get('/search/'.concat(this.newSearch))
-          .then(function (res) {
-            this.lastSearch = this.newSearch;
-            this.results = res.data;
-            this.appendItems();
-            this.loading = false;
-          });
+        this.$http.get("/search/".concat(this.newSearch)).then(function (res) {
+          this.lastSearch = this.newSearch;
+          this.results = res.data;
+          this.appendItems();
+          this.loading = false;
+        });
       }
     },
     addItem: function (index) {
@@ -76,7 +83,7 @@ new Vue({
   },
   filters: {
     currency: function (price) {
-      return '$'.concat(price.toFixed(2));
+      return "$".concat(price.toFixed(2));
     }
   },
   mounted: function () {
@@ -85,13 +92,38 @@ new Vue({
     var vueInstance = this;
     var elem = document.getElementById("product-list-bottom");
     var watcher = scrollMonitor.create(elem);
+    var vue = this;
     watcher.enterViewport(function () {
       vueInstance.appendItems();
     });
+    var channel = pusher.subscribe('cart');
+    channel.bind('update', function (data) {
+      vue.pusherUpdate = true;
+      vue.cart = data;
+      vue.total = 0;
+
+      for (var i = 0; i < vue.cart.length; i++) {
+        vue.total += PRICE * vue.cart[i].qty;
+      }
+    })
   },
   computed: {
     noMoreItems: function () {
-      return this.items.length == this.results.length && this.results.length > 0;
+      return (
+        this.items.length == this.results.length && this.results.length > 0
+      );
+    }
+  },
+  watch: {
+    cart: {
+      handler: function (val) {
+        if (!this.pusherUpdate) {
+          this.$http.post("/cart_update", val);
+        } else {
+          this.pusherUpdate = false;
+        }
+      },
+      deep: true
     }
   }
 });
